@@ -15,7 +15,7 @@ command = ["node", "src/board.js"]
 id = "open"
 title = "Open Next Meeting"
 contexts = ["global"]
-command = ["sh", "-c", "\"$HERDR_BIN_PATH\" plugin pane open \"$HERDR_PLUGIN_ID\" next"]
+command = ["sh", "-c", "\"$HERDR_BIN_PATH\" plugin pane open --plugin \"$HERDR_PLUGIN_ID\" --entrypoint next"]
 
 [[actions]]
 id = "setup"

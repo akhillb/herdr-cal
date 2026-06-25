@@ -29,8 +29,11 @@ function truncate(str, n) {
   return s.length > n ? s.slice(0, Math.max(0, n - 1)) + '…' : s;
 }
 
-function footer() {
-  return `${C.gray}[o] open  [j/k] select  [r] refresh  [q] quit${C.reset}`;
+function footer(width) {
+  const hints = width < 48
+    ? '[o]pen [r]efresh [q]uit'
+    : '[o] open  [j/k] select  [r] refresh  [q] quit';
+  return `${C.gray}${hints}${C.reset}`;
 }
 
 // Pure: view model (+ render opts) -> ANSI string for the pane.
@@ -49,12 +52,12 @@ function render(view, opts = {}) {
       L.push('  3. gcalcli init');
       L.push(`  Or preview the UI: ${C.bold}CAL_DEMO=1 node src/board.js${C.reset}`);
     }
-    L.push('', footer());
+    L.push('', footer(width));
     return L.join('\n');
   }
 
   if (!view || !view.next) {
-    L.push('', `${C.green}No upcoming meetings 🎉${C.reset}`, '', footer());
+    L.push('', `${C.green}No upcoming meetings 🎉${C.reset}`, '', footer(width));
     return L.join('\n');
   }
 
@@ -82,7 +85,7 @@ function render(view, opts = {}) {
     });
   }
 
-  L.push('', footer());
+  L.push('', footer(width));
   return L.join('\n');
 }
 

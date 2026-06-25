@@ -32,13 +32,19 @@ function recompute() {
   if (selected > max) selected = max;
 }
 
+function termWidth() {
+  return Math.max(24, Math.min(process.stdout.columns || 58, 100));
+}
+
 function draw() {
   recompute();
   if (view.isImminent !== lastImminent) {
     lastImminent = view.isImminent;
     reportAgent(view.isImminent ? 'blocked' : 'idle').catch(() => {});
   }
-  process.stdout.write('\x1b[2J\x1b[H' + render(view, { sourceErr, demo: cfg.demo, selected }));
+  process.stdout.write('\x1b[2J\x1b[H' + render(view, {
+    sourceErr, demo: cfg.demo, selected, width: termWidth(),
+  }));
 }
 
 async function poll() {
@@ -86,6 +92,7 @@ process.on('SIGINT', () => { cleanup(); process.exit(0); });
 process.on('SIGTERM', () => { cleanup(); process.exit(0); });
 
 setupInput();
+process.stdout.on('resize', draw);
 poll();
 setInterval(draw, 1000);
 setInterval(poll, cfg.pollMs);

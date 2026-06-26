@@ -75,12 +75,13 @@ function fetchEvents({ demo = false, window = 'in 12 hours', gcalcli = 'gcalcli'
       '--nocolor', 'agenda', 'now', window, '--tsv',
       '--details', 'url', '--details', 'conference', '--details', 'location',
     ];
-    execFile(gcalcli, args, { timeout: 15000 }, (err, stdout, stderr) => {
+    execFile(gcalcli, args, { timeout: 45000 }, (err, stdout, stderr) => {
       if (err) {
         const raw = String(stderr || err.message || err);
-        const error = /ENOENT|not found/i.test(raw)
-          ? 'gcalcli not installed'
-          : raw.trim();
+        let error;
+        if (err.killed || err.signal) error = 'gcalcli timed out';
+        else if (/ENOENT|not found/i.test(raw)) error = 'gcalcli not installed';
+        else error = raw.trim();
         resolve({ ok: false, events: [], error });
         return;
       }

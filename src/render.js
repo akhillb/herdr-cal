@@ -29,16 +29,24 @@ function truncate(str, n) {
   return s.length > n ? s.slice(0, Math.max(0, n - 1)) + '…' : s;
 }
 
-function footer(width) {
+function fmtAgo(ms) {
+  const s = Math.floor(ms / 1000);
+  return s < 90 ? `${s}s` : `${Math.floor(s / 60)}m`;
+}
+
+function footer(width, staleMs) {
   const hints = width < 48
     ? '[o]pen [r]efresh [q]uit'
     : '[o] open  [j/k] select  [r] refresh  [q] quit';
-  return `${C.gray}${hints}${C.reset}`;
+  const lines = [];
+  if (staleMs) lines.push(`${C.dim}⟳ stale · last ok ${fmtAgo(staleMs)} ago${C.reset}`);
+  lines.push(`${C.gray}${hints}${C.reset}`);
+  return lines.join('\n');
 }
 
 // Pure: view model (+ render opts) -> ANSI string for the pane.
 function render(view, opts = {}) {
-  const { sourceErr = null, demo = false, selected = 0, width = 58 } = opts;
+  const { sourceErr = null, demo = false, selected = 0, width = 58, staleMs = 0 } = opts;
   const L = [];
   L.push(`${C.bold}${C.cyan} Next Meeting ${C.reset}${demo ? `${C.dim}(demo)${C.reset}` : ''}`);
   L.push(`${C.gray}${'─'.repeat(width)}${C.reset}`);
@@ -52,12 +60,12 @@ function render(view, opts = {}) {
       L.push('  3. gcalcli init');
       L.push(`  Or preview the UI: ${C.bold}CAL_DEMO=1 node src/board.js${C.reset}`);
     }
-    L.push('', footer(width));
+    L.push('', footer(width, staleMs));
     return L.join('\n');
   }
 
   if (!view || !view.next) {
-    L.push('', `${C.green}No upcoming meetings 🎉${C.reset}`, '', footer(width));
+    L.push('', `${C.green}No upcoming meetings 🎉${C.reset}`, '', footer(width, staleMs));
     return L.join('\n');
   }
 
@@ -85,7 +93,7 @@ function render(view, opts = {}) {
     });
   }
 
-  L.push('', footer(width));
+  L.push('', footer(width, staleMs));
   return L.join('\n');
 }
 

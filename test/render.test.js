@@ -44,6 +44,24 @@ test('truncates an over-long title', () => {
   assert.match(out, /…/);
 });
 
+test('shows a stale marker (still rendering the meeting) when staleMs is set', () => {
+  const now = Date.now();
+  const view = {
+    next: { title: 'Standup', start: new Date(now + 30 * 60000), end: new Date(now + 60 * 60000), link: '', location: '' },
+    upcoming: [],
+    countdownMs: 30 * 60000,
+    isImminent: false,
+  };
+  const out = strip(render(view, { staleMs: 3 * 60000 }));
+  assert.match(out, /stale/);
+  assert.match(out, /Standup/); // last-good meeting still shown
+});
+
+test('no stale marker when staleMs is 0', () => {
+  const out = strip(render({ next: null, upcoming: [], countdownMs: null, isImminent: false }, { staleMs: 0 }));
+  assert.doesNotMatch(out, /stale/);
+});
+
 test('fmtCountdown formats seconds, minutes and hours', () => {
   assert.equal(fmtCountdown(30 * 1000), 'in 30s');
   assert.equal(fmtCountdown(23 * 60000), 'in 23m');

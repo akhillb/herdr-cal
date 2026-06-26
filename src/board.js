@@ -20,6 +20,8 @@ let sourceErr = null;
 let selected = 0;
 let view = null;
 let lastImminent = null;
+let lastOkAt = 0;
+const staleThresholdMs = cfg.pollMs * 2; // show "stale" only after ~2 missed refreshes
 
 function visibleList() {
   if (!view || !view.next) return [];
@@ -42,16 +44,37 @@ function draw() {
     lastImminent = view.isImminent;
     reportAgent(view.isImminent ? 'blocked' : 'idle').catch(() => {});
   }
+  const staleMs = (!cfg.demo && lastOkAt && Date.now() - lastOkAt > staleThresholdMs)
+    ? Date.now() - lastOkAt
+    : 0;
   process.stdout.write('\x1b[2J\x1b[H' + render(view, {
-    sourceErr, demo: cfg.demo, selected, width: termWidth(),
+    sourceErr, demo: cfg.demo, selected, width: termWidth(), staleMs,
   }));
 }
 
 async function poll() {
   const res = await fetchEvents({ demo: cfg.demo, window: cfg.window });
-  sourceErr = res.ok ? null : res.error;
-  events = res.events || [];
+  if (res.ok) {
+    events = res.events || [];
+    sourceErr = null;
+    lastOkAt = Date.now();
+  } else if (/not installed|not configured|not found/i.test(res.error) || lastOkAt === 0) {
+    // Hard failure: gcalcli unavailable, or we have never succeeded — show it.
+    sourceErr = res.error;
+    events = [];
+  }
+  // Otherwise a transient failure (e.g. a slow gcalcli that timed out): keep the
+  // last-good events and let draw() surface a subtle "stale" marker instead.
   draw();
+}
+
+function scheduleNextPoll() {
+  // Jitter so per-workspace panes don't all hit gcalcli/Google in the same instant.
+  setTimeout(runPoll, cfg.pollMs + Math.floor(Math.random() * 8000));
+}
+
+function runPoll() {
+  poll().finally(scheduleNextPoll);
 }
 
 function openSelected() {
@@ -93,6 +116,5 @@ process.on('SIGTERM', () => { cleanup(); process.exit(0); });
 
 setupInput();
 process.stdout.on('resize', draw);
-poll();
+runPoll();
 setInterval(draw, 1000);
-setInterval(poll, cfg.pollMs);

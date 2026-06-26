@@ -1,27 +1,52 @@
 'use strict';
 
-const TEN_MINUTES = 10 * 60 * 1000;
+const NOW_MS = 10 * 60 * 1000;   // ≤10m → NOW
+const SOON_MS = 90 * 60 * 1000;  // ≤90m → SOON
 
-// Pure: pick the next not-yet-started meeting and classify imminence.
-// `events` is the normalized list from calendar.js; `now` is epoch ms.
-function nextMeeting(events, now, { imminentMs = TEN_MINUTES } = {}) {
-  const future = (events || [])
-    .filter((e) => e && e.start instanceof Date && !Number.isNaN(e.start.getTime()))
-    .filter((e) => e.start.getTime() > now)
-    .sort((a, b) => a.start - b.start);
+function tierOf(msUntil) {
+  if (msUntil <= NOW_MS) return 'now';
+  if (msUntil <= SOON_MS) return 'soon';
+  return 'later';
+}
 
-  const next = future[0] || null;
-  if (!next) {
-    return { next: null, upcoming: [], countdownMs: null, isImminent: false };
+// Effective deadline after applying any snooze offset for the item.
+function effectiveDeadline(item, store) {
+  const snooze = (store && store.snoozed && store.snoozed[item.id]) || 0;
+  return (item.deadline || 0) + snooze;
+}
+
+// Pure: merge addon items into the tiered Attention feed.
+// `items`: normalized items from all addons. `now`: epoch ms. `store`: {done,snoozed}.
+function buildFeed(items, now, store = { done: {}, snoozed: {} }) {
+  const live = (items || [])
+    .filter((it) => it && it.id && !(store.done && store.done[it.id]))
+    .map((it) => ({ it, dl: effectiveDeadline(it, store) }))
+    .sort((a, b) => a.dl - b.dl);
+
+  const nowItems = [];
+  const soonItems = [];
+  const watching = [];
+  for (const { it, dl } of live) {
+    const tier = it.deadline == null ? 'later' : tierOf(dl - now);
+    const entry = { ...it, tier, countMs: it.deadline == null ? null : dl - now };
+    if (tier === 'now') nowItems.push(entry);
+    else if (tier === 'soon') soonItems.push(entry);
+    else watching.push(entry);
   }
 
-  const countdownMs = next.start.getTime() - now;
   return {
-    next,
-    upcoming: future.slice(1, 4),
-    countdownMs,
-    isImminent: countdownMs <= imminentMs,
+    groups: [
+      { tier: 'now', label: 'NOW', items: nowItems },
+      { tier: 'soon', label: 'SOON', items: soonItems },
+    ].filter((g) => g.items.length),
+    watching,
+    counts: { now: nowItems.length, soon: soonItems.length, later: watching.length },
   };
 }
 
-module.exports = { nextMeeting, TEN_MINUTES };
+// Flat list of focusable (non-watching) item ids, in display order.
+function focusableIds(feed) {
+  return feed.groups.flatMap((g) => g.items.map((i) => i.id));
+}
+
+module.exports = { buildFeed, tierOf, focusableIds, effectiveDeadline, NOW_MS, SOON_MS };

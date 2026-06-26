@@ -1,103 +1,147 @@
 'use strict';
 
-const C = {
-  reset: '\x1b[0m', bold: '\x1b[1m', dim: '\x1b[2m', inv: '\x1b[7m',
-  red: '\x1b[31m', green: '\x1b[32m', yellow: '\x1b[33m',
-  cyan: '\x1b[36m', gray: '\x1b[90m',
-};
-
-function pad2(n) { return String(n).padStart(2, '0'); }
-
-function fmtTime(d) {
-  if (!(d instanceof Date) || Number.isNaN(d.getTime())) return '??:??';
-  return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
-}
-
-function fmtCountdown(ms) {
-  if (ms == null) return '';
-  if (ms <= 0) return 'now';
-  const s = Math.floor(ms / 1000);
-  if (s < 60) return `in ${s}s`;
-  const m = Math.floor(s / 60);
-  if (m < 60) return `in ${m}m`;
-  const h = Math.floor(m / 60);
-  return `in ${h}h ${pad2(m % 60)}m`;
-}
+const { paint, color, RESET, tierRole } = require('./palette');
 
 function truncate(str, n) {
   const s = String(str);
   return s.length > n ? s.slice(0, Math.max(0, n - 1)) + '…' : s;
 }
 
-function fmtAgo(ms) {
+function fmtCount(ms) {
+  if (ms == null) return '';
+  if (ms <= 0) return 'now';
   const s = Math.floor(ms / 1000);
-  return s < 90 ? `${s}s` : `${Math.floor(s / 60)}m`;
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  if (h > 0) return `${h}h ${m}m`;
+  if (s >= 600) return `${m}m`;
+  return `${m}:${String(s % 60).padStart(2, '0')}`;
 }
 
-function footer(width, staleMs) {
-  const hints = width < 48
-    ? '[o]pen [r]efresh [q]uit'
-    : '[o] open  [j/k] select  [r] refresh  [q] quit';
-  const lines = [];
-  if (staleMs) lines.push(`${C.dim}⟳ stale · last ok ${fmtAgo(staleMs)} ago${C.reset}`);
-  lines.push(`${C.gray}${hints}${C.reset}`);
-  return lines.join('\n');
+function header(width, clock) {
+  const left = `${paint('●', 'urgent')} ${paint('ATTENTION', 'accent', { bold: true })}`;
+  const pad = Math.max(1, width - 'ATTENTION'.length - 2 - clock.length);
+  return `${left}${' '.repeat(pad)}${paint(clock, 'later')}`;
 }
 
-// Pure: view model (+ render opts) -> ANSI string for the pane.
+function summary(counts) {
+  return [
+    paint(String(counts.now), 'urgent', { bold: true }) + paint(' now', 'later'),
+    paint(String(counts.soon), 'soon', { bold: true }) + paint(' soon', 'later'),
+    paint(String(counts.later), 'later') + paint(' watching', 'later'),
+  ].join(paint('  ·  ', 'later'));
+}
+
+const ACTION_KEY = { open: 'o', reply: 'r', snooze: 's', done: 'x' };
+
+function actionsLine(item) {
+  const labels = {
+    open: item.openLabel || 'open', reply: 'reply', snooze: 'snooze', done: 'done',
+  };
+  return (item.actions || []).map((a) => {
+    const k = ACTION_KEY[a] || a[0];
+    return `${paint('[', 'later')}${paint(k, 'accent')}${paint(']', 'later')}${paint(labels[a], 'later')}`;
+  }).join('  ');
+}
+
+function renderItem(L, item, opts, width) {
+  const focused = opts.focusId === item.id;
+  const expanded = opts.expandedId === item.id;
+  const role = tierRole(item.tier);
+  const marker = focused ? paint('❯ ', 'accent', { bold: true }) : '  ';
+  const dot = paint('●', role);
+  const tag = paint(item.tag.padEnd(5).slice(0, 5), item.colorRole, { bold: true });
+  const count = item.countMs == null ? '' : paint(fmtCount(item.countMs), role, { bold: true });
+  const budget = Math.max(8, width - 2 - 2 - 6 - (count ? count.length : 0));
+  const title = focused
+    ? paint(truncate(item.title, budget), 'text', { bold: true })
+    : paint(truncate(item.title, budget), 'text');
+  const head = `${marker}${dot} ${tag} ${title}`;
+  // right-align the count
+  L.push(`${head}  ${count}`);
+  if (item.sub) L.push(`     ${paint(truncate(item.sub, width - 6), 'later')}`);
+
+  if (expanded && item.context && item.context.length) {
+    for (const c of item.context) {
+      const lbl = c.label ? paint(`${c.label} `, item.colorRole) : '';
+      L.push(`     ${lbl}${paint(truncate(c.text, width - 8), 'later')}`);
+    }
+  }
+  if (opts.snoozeId === item.id) {
+    const optsRow = ['15m', '1h', '3h', 'tomorrow']
+      .map((o) => paint(` ${o} `, 'text', { invert: true })).join(' ');
+    L.push(`     ${paint('snooze →', 'later')} ${optsRow}`);
+  } else if (focused || expanded) {
+    L.push(`     ${actionsLine(item)}`);
+  }
+}
+
+// Pure: view model -> ANSI string for the pane.
 function render(view, opts = {}) {
-  const { sourceErr = null, demo = false, selected = 0, width = 58, staleMs = 0, loading = false } = opts;
+  const width = opts.width || view.width || 46;
   const L = [];
-  L.push(`${C.bold}${C.cyan} Next Meeting ${C.reset}${demo ? `${C.dim}(demo)${C.reset}` : ''}`);
-  L.push(`${C.gray}${'─'.repeat(width)}${C.reset}`);
+  L.push(header(width, view.clock || ''));
+  L.push(paint('─'.repeat(width), 'later'));
 
-  if (sourceErr) {
-    L.push('', `${C.yellow}⚠ ${sourceErr}${C.reset}`, '');
-    if (/not installed|not configured|not found/i.test(sourceErr)) {
-      L.push(`${C.dim}Setup:${C.reset}`);
+  if (view.sourceErr) {
+    L.push('', paint(`⚠ ${view.sourceErr}`, 'soon'), '');
+    if (/not installed|not configured|not found/i.test(view.sourceErr)) {
+      L.push(paint('Setup:', 'later'));
       L.push('  1. pipx install gcalcli');
       L.push('  2. create a Google OAuth client (see README)');
       L.push('  3. gcalcli init');
-      L.push(`  Or preview the UI: ${C.bold}CAL_DEMO=1 node src/board.js${C.reset}`);
     }
-    L.push('', footer(width, staleMs));
+    L.push('', footer(view, width));
     return L.join('\n');
   }
 
-  if (!view || !view.next) {
-    const msg = loading
-      ? `${C.dim}Loading…${C.reset}`
-      : `${C.green}No upcoming meetings 🎉${C.reset}`;
-    L.push('', msg, '', footer(width, staleMs));
+  L.push(summary(view.counts));
+
+  if (view.showAdd) {
+    L.push('', paint('ADD A SOURCE', 'accent', { bold: true }) + paint('   [esc]', 'later'));
+    L.push(paint('plugins on the roadmap — each becomes a source', 'later'));
+    for (const f of view.addList || []) {
+      L.push(`${paint('▪', f.colorRole || 'later')} ${paint(f.name, 'text')}`);
+      if (f.note) L.push(`  ${paint(truncate(f.note, width - 2), 'later')}`);
+    }
+    L.push('', footer(view, width));
     return L.join('\n');
   }
 
-  const n = view.next;
-  const cd = fmtCountdown(view.countdownMs);
-  L.push('');
-  if (view.isImminent) {
-    L.push(`${C.red}${C.bold}${C.inv} ⏰ STARTS ${cd.toUpperCase()} ${C.reset}`);
-  } else {
-    L.push(`${C.green}${C.bold}${cd}${C.reset}`);
+  const empty = view.counts.now + view.counts.soon + view.counts.later === 0;
+  if (empty) {
+    L.push('', paint(view.loading ? 'Loading…' : 'Nothing needs you right now 🎉', view.loading ? 'later' : 'github'));
   }
 
-  const sel0 = selected === 0;
-  L.push(`${sel0 ? C.inv : ''}${C.bold}${truncate(n.title, width - 4)}${C.reset}`);
-  const loc = n.location ? `  ·  ${truncate(n.location, 22)}` : '';
-  L.push(`${C.dim}${fmtTime(n.start)}–${fmtTime(n.end)}${C.reset}${loc}`);
-  if (n.link) L.push(`${C.gray}${truncate(n.link, width)}${C.reset}`);
-
-  if (view.upcoming && view.upcoming.length) {
-    L.push('', `${C.dim}Later:${C.reset}`);
-    view.upcoming.forEach((e, i) => {
-      const sel = selected === i + 1;
-      const row = `${fmtTime(e.start)}  ${truncate(e.title, width - 8)}`;
-      L.push(sel ? `${C.inv}${row}${C.reset}` : `${C.dim}${row}${C.reset}`);
-    });
+  for (const g of view.groups) {
+    L.push('', paint(g.label, tierRole(g.tier), { bold: true }));
+    for (const item of g.items) renderItem(L, item, opts, width);
   }
 
-  L.push('', footer(width, staleMs));
+  if (view.watching && view.watching.length) {
+    L.push('', paint('WATCHING', 'later', { bold: true }));
+    for (const item of view.watching) {
+      const tag = paint(item.tag.padEnd(5).slice(0, 5), item.colorRole);
+      const cnt = item.countMs == null ? '' : paint(fmtCount(item.countMs), 'later');
+      L.push(`  ${tag} ${paint(truncate(item.title, width - 14), 'later')}  ${cnt}`);
+    }
+  }
+
+  if (view.staleMs) L.push('', paint(`⟳ stale · last ok ${Math.floor(view.staleMs / 1000)}s ago`, 'later'));
+  if (view.toast) L.push('', paint(view.toast.text, 'text', { invert: true }));
+  L.push('', footer(view, width));
   return L.join('\n');
 }
 
-module.exports = { render, fmtCountdown, fmtTime, truncate };
+function footer(view, width) {
+  const a = (k) => paint(k, 'accent');
+  const keys = width < 44
+    ? `${a('j/k')} ${a('↵')} ${a('o')} ${a('s')} ${a('x')}`
+    : `${a('j/k')} move · ${a('↵')} expand · ${a('o')} open · ${a('s')} snooze · ${a('x')} done`;
+  const legend = (view.sources || [])
+    .map((s) => `${paint('●', s.colorRole)} ${paint(s.tag.toLowerCase(), 'later')}`).join('  ');
+  const add = paint('[+] add', 'later');
+  return [paint(keys, 'later'), `${legend}   ${add}`].join('\n');
+}
+
+module.exports = { render, fmtCount, truncate };

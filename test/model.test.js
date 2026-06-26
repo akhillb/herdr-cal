@@ -2,55 +2,52 @@
 
 const test = require('node:test');
 const assert = require('node:assert');
-const { nextMeeting } = require('../src/model');
+const { buildFeed, tierOf, focusableIds, NOW_MS, SOON_MS } = require('../src/model');
 
-test('picks the earliest future meeting and lists the rest', () => {
-  const now = Date.now();
-  const events = [
-    { title: 'B', start: new Date(now + 60 * 60000) },
-    { title: 'A', start: new Date(now + 10 * 60000) },
-    { title: 'C', start: new Date(now + 120 * 60000) },
-  ];
-  const v = nextMeeting(events, now);
-  assert.equal(v.next.title, 'A');
-  assert.deepEqual(v.upcoming.map((e) => e.title), ['B', 'C']);
+const item = (id, offMin, extra = {}) => ({
+  id, title: id, sub: '', deadline: Date.now() + offMin * 60000,
+  actions: ['open'], context: [], tag: 'MTG', colorRole: 'mtg', ...extra,
 });
 
-test('empty events -> null, not imminent', () => {
-  const v = nextMeeting([], Date.now());
-  assert.equal(v.next, null);
-  assert.equal(v.isImminent, false);
-  assert.equal(v.countdownMs, null);
+test('tierOf classifies now / soon / later', () => {
+  assert.equal(tierOf(5 * 60000), 'now');
+  assert.equal(tierOf(NOW_MS), 'now');
+  assert.equal(tierOf(NOW_MS + 1), 'soon');
+  assert.equal(tierOf(SOON_MS), 'soon');
+  assert.equal(tierOf(SOON_MS + 1), 'later');
 });
 
-test('all-past events -> null', () => {
+test('buildFeed groups and sorts by deadline', () => {
   const now = Date.now();
-  const v = nextMeeting([{ title: 'x', start: new Date(now - 5 * 60000) }], now);
-  assert.equal(v.next, null);
+  const feed = buildFeed([item('c', 120), item('a', 5), item('b', 40)], now);
+  assert.deepEqual(feed.counts, { now: 1, soon: 1, later: 1 });
+  assert.equal(feed.groups[0].label, 'NOW');
+  assert.equal(feed.groups[0].items[0].id, 'a');
+  assert.equal(feed.watching[0].id, 'c');
 });
 
-test('imminent boundary is inclusive at exactly 10 minutes', () => {
-  const now = Date.now();
-  const at10 = nextMeeting([{ title: 'x', start: new Date(now + 10 * 60000) }], now);
-  assert.equal(at10.isImminent, true);
-  const past10 = nextMeeting([{ title: 'x', start: new Date(now + 10 * 60000 + 1) }], now);
-  assert.equal(past10.isImminent, false);
+test('empty items -> empty feed', () => {
+  const feed = buildFeed([], Date.now());
+  assert.deepEqual(feed.counts, { now: 0, soon: 0, later: 0 });
+  assert.equal(feed.groups.length, 0);
 });
 
-test('in-progress meeting is skipped in favour of the next', () => {
-  const now = Date.now();
-  const v = nextMeeting([
-    { title: 'ongoing', start: new Date(now - 2 * 60000) },
-    { title: 'next', start: new Date(now + 15 * 60000) },
-  ], now);
-  assert.equal(v.next.title, 'next');
+test('done items are filtered out', () => {
+  const feed = buildFeed([item('a', 5), item('b', 5)], Date.now(), { done: { a: true }, snoozed: {} });
+  assert.equal(feed.counts.now, 1);
+  assert.equal(feed.groups[0].items[0].id, 'b');
 });
 
-test('ignores entries with invalid start dates', () => {
+test('snooze pushes an item down a tier', () => {
   const now = Date.now();
-  const v = nextMeeting([
-    { title: 'bad', start: new Date(NaN) },
-    { title: 'good', start: new Date(now + 5 * 60000) },
-  ], now);
-  assert.equal(v.next.title, 'good');
+  const base = buildFeed([item('a', 5)], now);
+  assert.equal(base.counts.now, 1);
+  const snoozed = buildFeed([item('a', 5)], now, { done: {}, snoozed: { a: 60 * 60000 } });
+  assert.equal(snoozed.counts.now, 0);
+  assert.equal(snoozed.counts.soon, 1);
+});
+
+test('focusableIds covers now + soon only, in order', () => {
+  const feed = buildFeed([item('a', 5), item('b', 40), item('c', 200)], Date.now());
+  assert.deepEqual(focusableIds(feed), ['a', 'b']);
 });

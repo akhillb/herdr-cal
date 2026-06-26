@@ -1,25 +1,25 @@
-id = "cal"
-name = "Next Meeting"
-version = "0.1.0"
+id = "attention"
+name = "Attention"
+version = "0.2.0"
 min_herdr_version = "0.7.0"
-description = "Shows your next upcoming meeting with a live countdown and highlights it 10 minutes before it starts. Calendar data via gcalcli."
+description = "A unified attention feed for herdr: merges meetings (and more, via addons) into NOW / SOON / WATCHING tiers with live countdowns and triage actions."
 platforms = ["macos", "linux"]
 
 [[panes]]
-id = "next"
-title = "Next Meeting"
+id = "feed"
+title = "ATTENTION"
 placement = "split"
 command = ["node", "src/board.js"]
 
 [[actions]]
 id = "open"
-title = "Open Next Meeting"
+title = "Open Attention"
 contexts = ["global"]
-command = ["sh", "-c", "\"$HERDR_BIN_PATH\" plugin pane open --plugin \"$HERDR_PLUGIN_ID\" --entrypoint next"]
+command = ["sh", "-c", "\"$HERDR_BIN_PATH\" plugin pane open --plugin \"$HERDR_PLUGIN_ID\" --entrypoint feed"]
 
 [[actions]]
 id = "setup"
-title = "Calendar setup help"
+title = "Attention setup help"
 contexts = ["global"]
 command = ["node", "src/setup.js"]
 

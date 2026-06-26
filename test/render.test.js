@@ -2,70 +2,71 @@
 
 const test = require('node:test');
 const assert = require('node:assert');
-const { render, fmtCountdown } = require('../src/render');
+const { render, fmtCount } = require('../src/render');
 
 const strip = (s) => s.replace(/\x1b\[[0-9;]*m/g, '');
 
-test('renders a message when there is no upcoming meeting', () => {
-  const out = strip(render({ next: null, upcoming: [], countdownMs: null, isImminent: false }));
-  assert.match(out, /No upcoming meetings/);
+const view = (over = {}) => ({
+  clock: '12:00:00', counts: { now: 0, soon: 0, later: 0 },
+  groups: [], watching: [], sources: [{ tag: 'MTG', colorRole: 'mtg' }],
+  showAdd: false, addList: [], toast: null, sourceErr: null, staleMs: 0,
+  loading: false, width: 46, ...over,
 });
 
-test('shows the imminent banner when isImminent', () => {
-  const now = Date.now();
-  const view = {
-    next: { title: 'Standup', start: new Date(now + 8 * 60000), end: new Date(now + 38 * 60000), link: '', location: 'Zoom' },
-    upcoming: [],
-    countdownMs: 8 * 60000,
-    isImminent: true,
-  };
-  const out = strip(render(view));
-  assert.match(out, /STARTS IN 8M/);
+const mtg = (id, tier, countMs) => ({
+  id, tag: 'MTG', colorRole: 'mtg', title: id, sub: '12:00', tier, countMs,
+  actions: ['open', 'snooze', 'done'], context: [], openLabel: 'join',
+});
+
+test('renders the ATTENTION header and summary counts', () => {
+  const out = strip(render(view({ counts: { now: 2, soon: 1, later: 3 } })));
+  assert.match(out, /ATTENTION/);
+  assert.match(out, /2 now/);
+  assert.match(out, /1 soon/);
+  assert.match(out, /3 watching/);
+});
+
+test('renders a NOW group with the item', () => {
+  const out = strip(render(view({
+    counts: { now: 1, soon: 0, later: 0 },
+    groups: [{ tier: 'now', label: 'NOW', items: [mtg('Standup', 'now', 5 * 60000)] }],
+  })));
+  assert.match(out, /NOW/);
   assert.match(out, /Standup/);
 });
 
-test('shows setup hint when gcalcli is missing', () => {
-  const out = strip(render(null, { sourceErr: 'gcalcli not installed' }));
+test('empty feed says nothing needs you', () => {
+  assert.match(strip(render(view())), /Nothing needs you/);
+});
+
+test('loading state shows Loading', () => {
+  assert.match(strip(render(view({ loading: true }))), /Loading/);
+});
+
+test('hard source error shows setup hint', () => {
+  const out = strip(render(view({ sourceErr: 'gcalcli not installed' })));
   assert.match(out, /gcalcli not installed/);
   assert.match(out, /pipx install gcalcli/);
 });
 
-test('truncates an over-long title', () => {
-  const now = Date.now();
-  const longTitle = 'X'.repeat(200);
-  const view = {
-    next: { title: longTitle, start: new Date(now + 60 * 60000), end: new Date(now + 90 * 60000), link: '', location: '' },
-    upcoming: [],
-    countdownMs: 60 * 60000,
-    isImminent: false,
-  };
-  const out = strip(render(view, { width: 40 }));
-  assert.ok(!out.includes(longTitle), 'full title should not appear');
-  assert.match(out, /…/);
+test('WATCHING list is rendered', () => {
+  const out = strip(render(view({
+    counts: { now: 0, soon: 0, later: 1 },
+    watching: [mtg('Later thing', 'later', 200 * 60000)],
+  })));
+  assert.match(out, /WATCHING/);
+  assert.match(out, /Later thing/);
 });
 
-test('shows a stale marker (still rendering the meeting) when staleMs is set', () => {
-  const now = Date.now();
-  const view = {
-    next: { title: 'Standup', start: new Date(now + 30 * 60000), end: new Date(now + 60 * 60000), link: '', location: '' },
-    upcoming: [],
-    countdownMs: 30 * 60000,
-    isImminent: false,
-  };
-  const out = strip(render(view, { staleMs: 3 * 60000 }));
-  assert.match(out, /stale/);
-  assert.match(out, /Standup/); // last-good meeting still shown
+test('add-source overlay lists roadmap', () => {
+  const out = strip(render(view({ showAdd: true, addList: [{ name: 'Slack', note: 'DMs', colorRole: 'slack' }] })));
+  assert.match(out, /ADD A SOURCE/);
+  assert.match(out, /Slack/);
 });
 
-test('no stale marker when staleMs is 0', () => {
-  const out = strip(render({ next: null, upcoming: [], countdownMs: null, isImminent: false }, { staleMs: 0 }));
-  assert.doesNotMatch(out, /stale/);
-});
-
-test('fmtCountdown formats seconds, minutes and hours', () => {
-  assert.equal(fmtCountdown(30 * 1000), 'in 30s');
-  assert.equal(fmtCountdown(23 * 60000), 'in 23m');
-  assert.equal(fmtCountdown(65 * 60000), 'in 1h 05m');
-  assert.equal(fmtCountdown(0), 'now');
-  assert.equal(fmtCountdown(null), '');
+test('fmtCount formats now / m:ss / m / h', () => {
+  assert.equal(fmtCount(0), 'now');
+  assert.equal(fmtCount(90 * 1000), '1:30');
+  assert.equal(fmtCount(20 * 60000), '20m');
+  assert.equal(fmtCount(95 * 60000), '1h 35m');
 });

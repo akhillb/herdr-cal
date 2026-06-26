@@ -1,14 +1,14 @@
 {
-  "name": "herdr-cal",
-  "version": "0.1.0",
+  "name": "herdr-attention",
+  "version": "0.2.0",
   "private": true,
-  "description": "herdr plugin: shows your next meeting with a live countdown and highlights it 10 minutes before it starts.",
+  "description": "herdr plugin: a unified attention feed that merges sources (meetings, and more via addons) into NOW / SOON / WATCHING tiers with triage actions.",
   "license": "MIT",
   "engines": {
     "node": ">=18"
   },
   "scripts": {
     "test": "node --test",
-    "demo": "CAL_DEMO=1 node src/board.js"
+    "demo": "ATTENTION_DEMO=1 node src/board.js"
   }
 }

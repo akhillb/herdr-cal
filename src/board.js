@@ -12,6 +12,8 @@ const cfg = {
   demo: process.env.CAL_DEMO === '1' || process.env.ATTENTION_DEMO === '1' || process.argv.includes('--demo'),
   window: process.env.CAL_WINDOW || 'in 12 hours',
   pollMs: (Number(process.env.ATTENTION_POLL_SEC) || 60) * 1000,
+  nowMs: (Number(process.env.ATTENTION_NOW_MIN) || 10) * 60000,
+  soonMs: (Number(process.env.ATTENTION_SOON_MIN) || 90) * 60000,
 };
 
 const ROADMAP = [
@@ -51,7 +53,7 @@ function mergedItems() {
 }
 
 function feedNow() {
-  return buildFeed(mergedItems(), Date.now(), st);
+  return buildFeed(mergedItems(), Date.now(), st, { nowMs: cfg.nowMs, soonMs: cfg.soonMs });
 }
 
 function showToast(text) {

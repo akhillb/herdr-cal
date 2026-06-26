@@ -3,9 +3,9 @@
 const NOW_MS = 10 * 60 * 1000;   // ≤10m → NOW
 const SOON_MS = 90 * 60 * 1000;  // ≤90m → SOON
 
-function tierOf(msUntil) {
-  if (msUntil <= NOW_MS) return 'now';
-  if (msUntil <= SOON_MS) return 'soon';
+function tierOf(msUntil, { nowMs = NOW_MS, soonMs = SOON_MS } = {}) {
+  if (msUntil <= nowMs) return 'now';
+  if (msUntil <= soonMs) return 'soon';
   return 'later';
 }
 
@@ -17,7 +17,7 @@ function effectiveDeadline(item, store) {
 
 // Pure: merge addon items into the tiered Attention feed.
 // `items`: normalized items from all addons. `now`: epoch ms. `store`: {done,snoozed}.
-function buildFeed(items, now, store = { done: {}, snoozed: {} }) {
+function buildFeed(items, now, store = { done: {}, snoozed: {} }, tiers = {}) {
   const live = (items || [])
     .filter((it) => it && it.id && !(store.done && store.done[it.id]))
     .map((it) => ({ it, dl: effectiveDeadline(it, store) }))
@@ -27,7 +27,7 @@ function buildFeed(items, now, store = { done: {}, snoozed: {} }) {
   const soonItems = [];
   const watching = [];
   for (const { it, dl } of live) {
-    const tier = it.deadline == null ? 'later' : tierOf(dl - now);
+    const tier = it.deadline == null ? 'later' : tierOf(dl - now, tiers);
     const entry = { ...it, tier, countMs: it.deadline == null ? null : dl - now };
     if (tier === 'now') nowItems.push(entry);
     else if (tier === 'soon') soonItems.push(entry);

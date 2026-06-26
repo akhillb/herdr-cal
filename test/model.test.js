@@ -47,6 +47,22 @@ test('snooze pushes an item down a tier', () => {
   assert.equal(snoozed.counts.soon, 1);
 });
 
+test('a custom soon threshold widens/narrows the SOON tier', () => {
+  const now = Date.now();
+  const items = [item('a', 5), item('b', 120)]; // 120m out is "later" by default
+  assert.equal(buildFeed(items, now).counts.later, 1);
+  // widen SOON to 180m → the 120m item becomes SOON
+  const wide = buildFeed(items, now, { done: {}, snoozed: {} }, { soonMs: 180 * 60000 });
+  assert.equal(wide.counts.soon, 1);
+  assert.equal(wide.counts.later, 0);
+});
+
+test('a custom now threshold moves items into NOW', () => {
+  const now = Date.now();
+  const feed = buildFeed([item('a', 20)], now, { done: {}, snoozed: {} }, { nowMs: 30 * 60000, soonMs: 90 * 60000 });
+  assert.equal(feed.counts.now, 1);
+});
+
 test('focusableIds covers now + soon only, in order', () => {
   const feed = buildFeed([item('a', 5), item('b', 40), item('c', 200)], Date.now());
   assert.deepEqual(focusableIds(feed), ['a', 'b']);

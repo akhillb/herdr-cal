@@ -99,6 +99,8 @@ items, and tiers them by `deadline`. Items with no `deadline` land in WATCHING.
 |-----|---------|---------|
 | `ATTENTION_DEMO` / `CAL_DEMO` | unset | `1` → demo data, no gcalcli |
 | `ATTENTION_POLL_SEC` | `60` | poll interval (countdowns tick every second) |
+| `ATTENTION_SOON_MIN` | `90` | minutes-out threshold for the **SOON** tier (beyond it → WATCHING) |
+| `ATTENTION_NOW_MIN` | `10` | minutes-out threshold for the **NOW** tier |
 | `CAL_WINDOW` | `in 12 hours` | calendar look-ahead window |
 | `CAL_CALENDARS` | *(owned calendars)* | comma-separated calendar titles to include |
 
